@@ -4,8 +4,8 @@
 #include <allegro5/allegro.h>
 #include <allegro5/allegro_image.h>
 
-#define LARGURA 1536
-#define ALTURA 843
+#define LARGURA 985
+#define ALTURA 545
 
 int main(){
     //situações de possivel erro
@@ -57,23 +57,23 @@ int main(){
     mas o gpt me deu uma aproximação dos pixeis)
     */
 
-   //start
-   int startX1 = 637;
-   int startY1 = 289;
-   int startX2 = 912;
-   int startY2 = 388;
+   // START
+int startX1 = 395;
+int startY1 = 180;
+int startX2 = 580;
+int startY2 = 255;
 
-   //exit
-   int exitX1 = 628;
-   int exitY1 = 472;
-   int exitX2 = 932;
-   int exitY2 = 562;
+// EXIT
+int exitX1 = 390;
+int exitY1 = 298;
+int exitX2 = 583;
+int exitY2 = 360;
 
-   //settings
-   int settingsX1 = 586;
-   int settingsY1 = 620;
-   int settingsX2 = 958;
-   int settingsY2 = 711;
+// SETTINGS
+int settingsX1 = 363;
+int settingsY1 = 392;
+int settingsX2 = 611;
+int settingsY2 = 456;
 
    bool rodando = true;
 
