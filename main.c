@@ -1,13 +1,18 @@
 #include <stdio.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include <allegro5/allegro.h>
 #include <allegro5/allegro_image.h>
+#include <allegro5/allegro_font.h>
+#include <allegro5/allegro_primitives.h>
 
 #define LARGURA 985
 #define ALTURA 545
+#define MAX_TEXTO 256
 
-// Estados/telas do jogo
+
+// telas que o jogo tem por enquanto
 typedef enum {
     TELA_MENU,
     TELA_SELECAO_FASES,
@@ -15,7 +20,20 @@ typedef enum {
 } Tela;
 
 
-// Desenha uma imagem ocupando a janela inteira
+// dados de cada caixa onde o jogador pode escrever
+typedef struct {
+    float x;
+    float y;
+    float largura;
+    float altura;
+
+    char texto[MAX_TEXTO];
+
+    bool ativa;
+} CaixaTexto;
+
+
+// coloca uma imagem no tamanho da janela
 void desenhar_imagem_tela(ALLEGRO_BITMAP *imagem) {
 
     int larguraImagem = al_get_bitmap_width(imagem);
@@ -34,11 +52,145 @@ void desenhar_imagem_tela(ALLEGRO_BITMAP *imagem) {
 }
 
 
-int main() {
+// desenha uma caixa e o texto dela
+void desenhar_caixa_texto(
+    CaixaTexto *caixa,
+    ALLEGRO_FONT *fonte
+) {
 
-    // ==========================
-    // INICIALIZAÇÃO DO ALLEGRO
-    // ==========================
+    ALLEGRO_COLOR fundo = al_map_rgb(20, 20, 30);
+    ALLEGRO_COLOR bordaNormal = al_map_rgb(150, 150, 150);
+    ALLEGRO_COLOR bordaAtiva = al_map_rgb(0, 200, 255);
+    ALLEGRO_COLOR branco = al_map_rgb(255, 255, 255);
+
+    al_draw_filled_rectangle(
+        caixa->x,
+        caixa->y,
+        caixa->x + caixa->largura,
+        caixa->y + caixa->altura,
+        fundo
+    );
+
+    // deixa a borda diferente quando a caixa está selecionada
+    if (caixa->ativa) {
+
+        al_draw_rectangle(
+            caixa->x,
+            caixa->y,
+            caixa->x + caixa->largura,
+            caixa->y + caixa->altura,
+            bordaAtiva,
+            3
+        );
+
+    } else {
+
+        al_draw_rectangle(
+            caixa->x,
+            caixa->y,
+            caixa->x + caixa->largura,
+            caixa->y + caixa->altura,
+            bordaNormal,
+            2
+        );
+    }
+
+    al_draw_text(
+        fonte,
+        branco,
+        caixa->x + 10,
+        caixa->y + 12,
+        0,
+        caixa->texto
+    );
+}
+
+
+// redesenha o fundo da fase e coloca as caixas por cima
+void desenhar_fase1(
+    ALLEGRO_BITMAP *fase1,
+    ALLEGRO_FONT *fonte,
+    CaixaTexto caixas[],
+    int quantidadeCaixas
+) {
+
+    int larguraImagem = al_get_bitmap_width(fase1);
+    int alturaImagem = al_get_bitmap_height(fase1);
+
+    al_draw_scaled_bitmap(
+        fase1,
+        0, 0,
+        larguraImagem,
+        alturaImagem,
+        0, 0,
+        LARGURA,
+        ALTURA,
+        0
+    );
+
+    for (int i = 0; i < quantidadeCaixas; i++) {
+        desenhar_caixa_texto(&caixas[i], fonte);
+    }
+
+    al_flip_display();
+}
+
+
+// confere se o mouse clicou dentro da caixa
+bool mouse_dentro_caixa(
+    CaixaTexto *caixa,
+    int mouseX,
+    int mouseY
+) {
+
+    return (
+        mouseX >= caixa->x &&
+        mouseX <= caixa->x + caixa->largura &&
+        mouseY >= caixa->y &&
+        mouseY <= caixa->y + caixa->altura
+    );
+}
+
+
+// cuida do texto digitado
+void processar_digitacao(
+    CaixaTexto *caixa,
+    ALLEGRO_EVENT *evento
+) {
+
+    int tamanho = strlen(caixa->texto);
+
+    if (evento->keyboard.keycode == ALLEGRO_KEY_BACKSPACE) {
+
+        if (tamanho > 0) {
+            caixa->texto[tamanho - 1] = '\0';
+        }
+
+        return;
+    }
+
+    if (evento->keyboard.keycode == ALLEGRO_KEY_ENTER) {
+
+        caixa->ativa = false;
+
+        return;
+    }
+
+    int caractere = evento->keyboard.unichar;
+
+    // caracteres comuns
+    if (caractere >= 32 && caractere <= 126) {
+
+        if (tamanho < MAX_TEXTO - 1) {
+
+            caixa->texto[tamanho] = (char)caractere;
+            caixa->texto[tamanho + 1] = '\0';
+        }
+    }
+}
+
+
+int main(void) {
 
     if (!al_init()) {
         printf("Erro ao iniciar Allegro!\n");
@@ -46,9 +198,16 @@ int main() {
     }
 
     if (!al_init_image_addon()) {
-        printf("Erro ao iniciar addon de imagens!\n");
+        printf("Erro ao iniciar imagens!\n");
         return 1;
     }
+
+    if (!al_init_primitives_addon()) {
+        printf("Erro ao iniciar primitives!\n");
+        return 1;
+    }
+
+    al_init_font_addon();
 
     if (!al_install_mouse()) {
         printf("Erro ao iniciar mouse!\n");
@@ -61,10 +220,7 @@ int main() {
     }
 
 
-    // ==========================
-    // CRIAÇÃO DA JANELA
-    // ==========================
-
+    // janela
     ALLEGRO_DISPLAY *display =
         al_create_display(LARGURA, ALTURA);
 
@@ -76,10 +232,17 @@ int main() {
     al_set_window_title(display, "Vector Sector");
 
 
-    // ==========================
-    // CARREGAMENTO DAS IMAGENS
-    // ==========================
+    // fonte padrão do Allegro
+    ALLEGRO_FONT *fonte =
+        al_create_builtin_font();
 
+    if (!fonte) {
+        printf("Erro ao criar fonte!\n");
+        return 1;
+    }
+
+
+    // imagens
     ALLEGRO_BITMAP *menu =
         al_load_bitmap("menu.png");
 
@@ -90,183 +253,141 @@ int main() {
         al_load_bitmap("fase1.jpg");
 
 
-    // Confere se as imagens carregaram
     if (!menu) {
         printf("Erro ao carregar menu.png!\n");
-
-        al_destroy_display(display);
         return 1;
     }
 
     if (!selecaoFases) {
         printf("Erro ao carregar selecao_fases.jpg!\n");
-
-        al_destroy_bitmap(menu);
-        al_destroy_display(display);
         return 1;
     }
 
     if (!fase1) {
         printf("Erro ao carregar fase1.jpg!\n");
-
-        al_destroy_bitmap(menu);
-        al_destroy_bitmap(selecaoFases);
-        al_destroy_display(display);
-
         return 1;
     }
 
 
-    // ==========================
-    // FILA DE EVENTOS
-    // ==========================
-
+    // fila de eventos
     ALLEGRO_EVENT_QUEUE *fila =
         al_create_event_queue();
 
     if (!fila) {
-        printf("Erro ao criar fila de eventos!\n");
-
-        al_destroy_bitmap(menu);
-        al_destroy_bitmap(selecaoFases);
-        al_destroy_bitmap(fase1);
-        al_destroy_display(display);
-
+        printf("Erro ao criar fila!\n");
         return 1;
     }
 
-
-    // Eventos da janela
     al_register_event_source(
         fila,
         al_get_display_event_source(display)
     );
 
-    // Eventos do mouse
     al_register_event_source(
         fila,
         al_get_mouse_event_source()
     );
 
-    // Eventos do teclado
     al_register_event_source(
         fila,
         al_get_keyboard_event_source()
     );
 
 
-    // ==========================
-    // ÁREAS CLICÁVEIS DO MENU
-    // ==========================
-
-    // START
+    // botão start
     int startX1 = 395;
     int startY1 = 180;
     int startX2 = 580;
     int startY2 = 255;
 
-    // EXIT
+    // botão exit
     int exitX1 = 390;
     int exitY1 = 298;
     int exitX2 = 583;
     int exitY2 = 360;
 
-    // SETTINGS
+    // botão settings
     int settingsX1 = 363;
     int settingsY1 = 392;
     int settingsX2 = 611;
     int settingsY2 = 456;
 
 
-    // ==========================
-    // ÁREAS DA SELEÇÃO DE FASES
-    // ==========================
-
-    // Botão VOLTAR
+    // botão voltar
     int voltarX1 = 0;
     int voltarY1 = 0;
     int voltarX2 = 160;
     int voltarY2 = 70;
 
 
-    // SETOR 01 / PLANETA TERRA
+    // setor 1
     int setor1X1 = 65;
     int setor1Y1 = 155;
     int setor1X2 = 220;
     int setor1Y2 = 345;
 
 
-    // ==========================
-    // ESTADO INICIAL DO JOGO
-    // ==========================
+    // caixas de texto da fase 1
+    CaixaTexto caixas[2];
+
+
+    caixas[0].x = 100;
+    caixas[0].y = 400;
+    caixas[0].largura = 350;
+    caixas[0].altura = 50;
+    caixas[0].texto[0] = '\0';
+    caixas[0].ativa = false;
+
+
+    caixas[1].x = 520;
+    caixas[1].y = 400;
+    caixas[1].largura = 350;
+    caixas[1].altura = 50;
+    caixas[1].texto[0] = '\0';
+    caixas[1].ativa = false;
+
+
+    int quantidadeCaixas = 2;
 
     bool rodando = true;
 
     Tela telaAtual = TELA_MENU;
 
 
-    // Desenha o menu principal
     desenhar_imagem_tela(menu);
 
-
-    // ==========================
-    // LOOP PRINCIPAL
-    // ==========================
 
     while (rodando) {
 
         ALLEGRO_EVENT evento;
 
-        // Espera algum evento acontecer
         al_wait_for_event(fila, &evento);
 
 
-        // ==========================
-        // FECHAR JANELA
-        // ==========================
-
+        // fechar pelo X
         if (evento.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
-
             rodando = false;
         }
 
 
-        // ==========================
-        // TECLADO
-        // ==========================
-
+        // ESC
         if (evento.type == ALLEGRO_EVENT_KEY_DOWN) {
 
-            // Apertou ESC
             if (evento.keyboard.keycode == ALLEGRO_KEY_ESCAPE) {
 
-                // Se estiver na fase 1,
-                // volta para seleção de fases
                 if (telaAtual == TELA_FASE1) {
 
                     telaAtual = TELA_SELECAO_FASES;
 
                     desenhar_imagem_tela(selecaoFases);
 
-                    printf("Voltando para selecao de fases...\n");
-                }
-
-
-                // Se estiver na seleção,
-                // volta para o menu
-                else if (telaAtual == TELA_SELECAO_FASES) {
+                } else if (telaAtual == TELA_SELECAO_FASES) {
 
                     telaAtual = TELA_MENU;
 
                     desenhar_imagem_tela(menu);
 
-                    printf("Voltando para o menu...\n");
-                }
-
-
-                // Se estiver no menu,
-                // fecha o jogo
-                else if (telaAtual == TELA_MENU) {
+                } else if (telaAtual == TELA_MENU) {
 
                     rodando = false;
                 }
@@ -274,28 +395,46 @@ int main() {
         }
 
 
-        // ==========================
-        // MOUSE
-        // ==========================
+        // texto digitado nas caixas
+        if (
+            evento.type == ALLEGRO_EVENT_KEY_CHAR &&
+            telaAtual == TELA_FASE1
+        ) {
 
+            for (int i = 0; i < quantidadeCaixas; i++) {
+
+                if (caixas[i].ativa) {
+
+                    processar_digitacao(
+                        &caixas[i],
+                        &evento
+                    );
+
+                    desenhar_fase1(
+                        fase1,
+                        fonte,
+                        caixas,
+                        quantidadeCaixas
+                    );
+
+                    break;
+                }
+            }
+        }
+
+
+        // mouse
         if (evento.type == ALLEGRO_EVENT_MOUSE_BUTTON_DOWN) {
 
             int mouseX = evento.mouse.x;
             int mouseY = evento.mouse.y;
 
-
-            // Botão esquerdo do mouse
             if (evento.mouse.button == 1) {
 
 
-                // ==========================================
-                // MENU PRINCIPAL
-                // ==========================================
-
+                // menu
                 if (telaAtual == TELA_MENU) {
 
-
-                    // START
                     if (
                         mouseX >= startX1 &&
                         mouseX <= startX2 &&
@@ -311,7 +450,6 @@ int main() {
                     }
 
 
-                    // EXIT
                     else if (
                         mouseX >= exitX1 &&
                         mouseX <= exitX2 &&
@@ -325,7 +463,6 @@ int main() {
                     }
 
 
-                    // SETTINGS
                     else if (
                         mouseX >= settingsX1 &&
                         mouseX <= settingsX2 &&
@@ -334,20 +471,13 @@ int main() {
                     ) {
 
                         printf("SETTINGS clicado!\n");
-
-                        // Depois fazemos a tela de configurações
                     }
                 }
 
 
-                // ==========================================
-                // SELEÇÃO DE FASES
-                // ==========================================
-
+                // seleção de fases
                 else if (telaAtual == TELA_SELECAO_FASES) {
 
-
-                    // BOTÃO VOLTAR
                     if (
                         mouseX >= voltarX1 &&
                         mouseX <= voltarX2 &&
@@ -355,15 +485,12 @@ int main() {
                         mouseY <= voltarY2
                     ) {
 
-                        printf("Voltando para o menu...\n");
-
                         telaAtual = TELA_MENU;
 
                         desenhar_imagem_tela(menu);
                     }
 
 
-                    // SETOR 01
                     else if (
                         mouseX >= setor1X1 &&
                         mouseX <= setor1X2 &&
@@ -371,54 +498,70 @@ int main() {
                         mouseY <= setor1Y2
                     ) {
 
-                        printf("Entrando na Fase 1!\n");
+                        printf("Entrando na fase 1!\n");
 
                         telaAtual = TELA_FASE1;
 
-                        desenhar_imagem_tela(fase1);
+                        desenhar_fase1(
+                            fase1,
+                            fonte,
+                            caixas,
+                            quantidadeCaixas
+                        );
                     }
                 }
 
 
-                // ==========================================
-                // FASE 1
-                // ==========================================
-
+                // caixas da fase 1
                 else if (telaAtual == TELA_FASE1) {
 
-                    /*
-                        Por enquanto não há nada clicável aqui.
+                    // primeiro tira o foco de todas
+                    for (int i = 0; i < quantidadeCaixas; i++) {
+                        caixas[i].ativa = false;
+                    }
 
-                        Depois entram:
-                        - nave
-                        - inimigos
-                        - vetores
-                        - movimento
-                        - combate
-                        etc.
-                    */
+
+                    // depois procura qual foi clicada
+                    for (int i = 0; i < quantidadeCaixas; i++) {
+
+                        if (
+                            mouse_dentro_caixa(
+                                &caixas[i],
+                                mouseX,
+                                mouseY
+                            )
+                        ) {
+
+                            caixas[i].ativa = true;
+
+                            break;
+                        }
+                    }
+
+
+                    desenhar_fase1(
+                        fase1,
+                        fonte,
+                        caixas,
+                        quantidadeCaixas
+                    );
                 }
             }
         }
     }
 
 
-    // ==========================
-    // LIBERAR MEMÓRIA
-    // ==========================
+    al_destroy_font(fonte);
 
     al_destroy_bitmap(menu);
-
     al_destroy_bitmap(selecaoFases);
-
     al_destroy_bitmap(fase1);
 
     al_destroy_event_queue(fila);
-
     al_destroy_display(display);
 
+    al_shutdown_primitives_addon();
     al_shutdown_image_addon();
-
 
     return 0;
 }
