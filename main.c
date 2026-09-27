@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
+#include <math.h>
 
 #include <allegro5/allegro.h>
 #include <allegro5/allegro_image.h>
@@ -10,9 +11,10 @@
 #define LARGURA 985
 #define ALTURA 545
 #define MAX_TEXTO 256
+#define FPS 60.0
 
 
-// telas que o jogo tem por enquanto
+// telas do jogo
 typedef enum {
     TELA_MENU,
     TELA_SELECAO_FASES,
@@ -20,7 +22,7 @@ typedef enum {
 } Tela;
 
 
-// dados de cada caixa onde o jogador pode escrever
+// caixa onde o jogador consegue escrever
 typedef struct {
     float x;
     float y;
@@ -52,7 +54,7 @@ void desenhar_imagem_tela(ALLEGRO_BITMAP *imagem) {
 }
 
 
-// desenha uma caixa e o texto dela
+// desenha uma caixa de texto
 void desenhar_caixa_texto(
     CaixaTexto *caixa,
     ALLEGRO_FONT *fonte
@@ -71,7 +73,6 @@ void desenhar_caixa_texto(
         fundo
     );
 
-    // deixa a borda diferente quando a caixa está selecionada
     if (caixa->ativa) {
 
         al_draw_rectangle(
@@ -106,17 +107,20 @@ void desenhar_caixa_texto(
 }
 
 
-// redesenha o fundo da fase e coloca as caixas por cima
+// desenha tudo que existe na fase 1
 void desenhar_fase1(
     ALLEGRO_BITMAP *fase1,
     ALLEGRO_FONT *fonte,
     CaixaTexto caixas[],
-    int quantidadeCaixas
+    int quantidadeCaixas,
+    float caixaMovelX,
+    float caixaMovelY
 ) {
 
     int larguraImagem = al_get_bitmap_width(fase1);
     int alturaImagem = al_get_bitmap_height(fase1);
 
+    // fundo
     al_draw_scaled_bitmap(
         fase1,
         0, 0,
@@ -128,6 +132,18 @@ void desenhar_fase1(
         0
     );
 
+
+    // caixa do Cris que se move usando seno
+    al_draw_filled_rectangle(
+        caixaMovelX,
+        caixaMovelY,
+        caixaMovelX + 60,
+        caixaMovelY + 60,
+        al_map_rgb(0, 255, 100)
+    );
+
+
+    // caixas de texto
     for (int i = 0; i < quantidadeCaixas; i++) {
         desenhar_caixa_texto(&caixas[i], fonte);
     }
@@ -136,7 +152,7 @@ void desenhar_fase1(
 }
 
 
-// confere se o mouse clicou dentro da caixa
+// confere se o clique aconteceu dentro da caixa
 bool mouse_dentro_caixa(
     CaixaTexto *caixa,
     int mouseX,
@@ -152,7 +168,7 @@ bool mouse_dentro_caixa(
 }
 
 
-// cuida do texto digitado
+// cuida da digitação
 void processar_digitacao(
     CaixaTexto *caixa,
     ALLEGRO_EVENT *evento
@@ -178,14 +194,14 @@ void processar_digitacao(
 
     int caractere = evento->keyboard.unichar;
 
-    // caracteres comuns
-    if (caractere >= 32 && caractere <= 126) {
+    if (
+        caractere >= 32 &&
+        caractere <= 126 &&
+        tamanho < MAX_TEXTO - 1
+    ) {
 
-        if (tamanho < MAX_TEXTO - 1) {
-
-            caixa->texto[tamanho] = (char)caractere;
-            caixa->texto[tamanho + 1] = '\0';
-        }
+        caixa->texto[tamanho] = (char)caractere;
+        caixa->texto[tamanho + 1] = '\0';
     }
 }
 
@@ -220,7 +236,16 @@ int main(void) {
     }
 
 
-    // janela
+    // timer usado para atualizar o movimento
+    ALLEGRO_TIMER *timer =
+        al_create_timer(1.0 / FPS);
+
+    if (!timer) {
+        printf("Erro ao criar timer!\n");
+        return 1;
+    }
+
+
     ALLEGRO_DISPLAY *display =
         al_create_display(LARGURA, ALTURA);
 
@@ -232,7 +257,6 @@ int main(void) {
     al_set_window_title(display, "Vector Sector");
 
 
-    // fonte padrão do Allegro
     ALLEGRO_FONT *fonte =
         al_create_builtin_font();
 
@@ -269,7 +293,6 @@ int main(void) {
     }
 
 
-    // fila de eventos
     ALLEGRO_EVENT_QUEUE *fila =
         al_create_event_queue();
 
@@ -277,6 +300,7 @@ int main(void) {
         printf("Erro ao criar fila!\n");
         return 1;
     }
+
 
     al_register_event_source(
         fila,
@@ -291,6 +315,11 @@ int main(void) {
     al_register_event_source(
         fila,
         al_get_keyboard_event_source()
+    );
+
+    al_register_event_source(
+        fila,
+        al_get_timer_event_source(timer)
     );
 
 
@@ -313,23 +342,20 @@ int main(void) {
     int settingsY2 = 456;
 
 
-    // botão voltar
+    // seleção de fases
     int voltarX1 = 0;
     int voltarY1 = 0;
     int voltarX2 = 160;
     int voltarY2 = 70;
 
-
-    // setor 1
     int setor1X1 = 65;
     int setor1Y1 = 155;
     int setor1X2 = 220;
     int setor1Y2 = 345;
 
 
-    // caixas de texto da fase 1
+    // caixas de texto
     CaixaTexto caixas[2];
-
 
     caixas[0].x = 100;
     caixas[0].y = 400;
@@ -338,7 +364,6 @@ int main(void) {
     caixas[0].texto[0] = '\0';
     caixas[0].ativa = false;
 
-
     caixas[1].x = 520;
     caixas[1].y = 400;
     caixas[1].largura = 350;
@@ -346,13 +371,22 @@ int main(void) {
     caixas[1].texto[0] = '\0';
     caixas[1].ativa = false;
 
-
     int quantidadeCaixas = 2;
 
+
+    // caixa móvel feita pelo Cris
+    float caixaMovelX = 492.0;
+    float caixaMovelY = 272.0;
+    float tempo = 0.0;
+
+
     bool rodando = true;
+    bool renderizar = true;
 
     Tela telaAtual = TELA_MENU;
 
+
+    al_start_timer(timer);
 
     desenhar_imagem_tela(menu);
 
@@ -364,7 +398,22 @@ int main(void) {
         al_wait_for_event(fila, &evento);
 
 
-        // fechar pelo X
+        // atualiza o movimento da caixa
+        if (evento.type == ALLEGRO_EVENT_TIMER) {
+
+            if (telaAtual == TELA_FASE1) {
+
+                tempo += 0.04;
+
+                caixaMovelX =
+                    450.0 + (sin(tempo) * 250.0);
+            }
+
+            renderizar = true;
+        }
+
+
+        // fechar janela
         if (evento.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
             rodando = false;
         }
@@ -378,16 +427,14 @@ int main(void) {
                 if (telaAtual == TELA_FASE1) {
 
                     telaAtual = TELA_SELECAO_FASES;
-
-                    desenhar_imagem_tela(selecaoFases);
+                    renderizar = true;
 
                 } else if (telaAtual == TELA_SELECAO_FASES) {
 
                     telaAtual = TELA_MENU;
+                    renderizar = true;
 
-                    desenhar_imagem_tela(menu);
-
-                } else if (telaAtual == TELA_MENU) {
+                } else {
 
                     rodando = false;
                 }
@@ -395,7 +442,7 @@ int main(void) {
         }
 
 
-        // texto digitado nas caixas
+        // digitação nas caixas
         if (
             evento.type == ALLEGRO_EVENT_KEY_CHAR &&
             telaAtual == TELA_FASE1
@@ -410,12 +457,7 @@ int main(void) {
                         &evento
                     );
 
-                    desenhar_fase1(
-                        fase1,
-                        fonte,
-                        caixas,
-                        quantidadeCaixas
-                    );
+                    renderizar = true;
 
                     break;
                 }
@@ -444,9 +486,10 @@ int main(void) {
 
                         printf("START clicado!\n");
 
-                        telaAtual = TELA_SELECAO_FASES;
+                        telaAtual =
+                            TELA_SELECAO_FASES;
 
-                        desenhar_imagem_tela(selecaoFases);
+                        renderizar = true;
                     }
 
 
@@ -476,7 +519,10 @@ int main(void) {
 
 
                 // seleção de fases
-                else if (telaAtual == TELA_SELECAO_FASES) {
+                else if (
+                    telaAtual ==
+                    TELA_SELECAO_FASES
+                ) {
 
                     if (
                         mouseX >= voltarX1 &&
@@ -485,9 +531,11 @@ int main(void) {
                         mouseY <= voltarY2
                     ) {
 
+                        printf("Voltando para o menu...\n");
+
                         telaAtual = TELA_MENU;
 
-                        desenhar_imagem_tela(menu);
+                        renderizar = true;
                     }
 
 
@@ -502,27 +550,34 @@ int main(void) {
 
                         telaAtual = TELA_FASE1;
 
-                        desenhar_fase1(
-                            fase1,
-                            fonte,
-                            caixas,
-                            quantidadeCaixas
-                        );
+                        renderizar = true;
                     }
                 }
 
 
                 // caixas da fase 1
-                else if (telaAtual == TELA_FASE1) {
+                else if (
+                    telaAtual ==
+                    TELA_FASE1
+                ) {
 
-                    // primeiro tira o foco de todas
-                    for (int i = 0; i < quantidadeCaixas; i++) {
+                    // tira o foco de todas
+                    for (
+                        int i = 0;
+                        i < quantidadeCaixas;
+                        i++
+                    ) {
+
                         caixas[i].ativa = false;
                     }
 
 
-                    // depois procura qual foi clicada
-                    for (int i = 0; i < quantidadeCaixas; i++) {
+                    // procura qual foi clicada
+                    for (
+                        int i = 0;
+                        i < quantidadeCaixas;
+                        i++
+                    ) {
 
                         if (
                             mouse_dentro_caixa(
@@ -538,14 +593,51 @@ int main(void) {
                         }
                     }
 
-
-                    desenhar_fase1(
-                        fase1,
-                        fonte,
-                        caixas,
-                        quantidadeCaixas
-                    );
+                    renderizar = true;
                 }
+            }
+        }
+
+
+        // desenha só quando termina de processar os eventos pendentes
+        if (
+            renderizar &&
+            al_is_event_queue_empty(fila)
+        ) {
+
+            renderizar = false;
+
+
+            if (telaAtual == TELA_MENU) {
+
+                desenhar_imagem_tela(menu);
+            }
+
+
+            else if (
+                telaAtual ==
+                TELA_SELECAO_FASES
+            ) {
+
+                desenhar_imagem_tela(
+                    selecaoFases
+                );
+            }
+
+
+            else if (
+                telaAtual ==
+                TELA_FASE1
+            ) {
+
+                desenhar_fase1(
+                    fase1,
+                    fonte,
+                    caixas,
+                    quantidadeCaixas,
+                    caixaMovelX,
+                    caixaMovelY
+                );
             }
         }
     }
@@ -557,9 +649,11 @@ int main(void) {
     al_destroy_bitmap(selecaoFases);
     al_destroy_bitmap(fase1);
 
+    al_destroy_timer(timer);
     al_destroy_event_queue(fila);
     al_destroy_display(display);
 
+    al_shutdown_font_addon();
     al_shutdown_primitives_addon();
     al_shutdown_image_addon();
 
